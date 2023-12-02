@@ -5,11 +5,11 @@ use std::fs;
 use std::num::ParseIntError;
 use std::str::FromStr;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct HandfulCount {
-    red: u8,
-    green: u8,
-    blue: u8,
+    red: u16,
+    green: u16,
+    blue: u16,
 }
 
 #[derive(Debug)]
@@ -72,7 +72,7 @@ impl From<ParseHandfulCountError> for ParseGameError {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Game {
     id: u16,
     subsets: Vec<HandfulCount>,
@@ -117,10 +117,17 @@ fn main() {
 
     log::debug!("{:?}", record);
 
-    let possible_games: Vec<Game> = record.into_iter().filter(is_valid_game).collect();
+    let possible_games: Vec<Game> = record.iter().cloned().filter(is_valid_game).collect();
     let id_sum: u16 = possible_games.iter().map(|game| game.id).sum();
 
     println!("{}", id_sum);
+
+    let minimum_counts: Vec<HandfulCount> = record.iter().map(get_minimum_cube_count).collect();
+    let sum_of_powers: u16 = minimum_counts
+        .iter()
+        .map(|count| count.red * count.green * count.blue)
+        .sum();
+    println!("{}", sum_of_powers);
 }
 
 fn is_valid_game(game: &Game) -> bool {
@@ -135,4 +142,19 @@ fn is_valid_game(game: &Game) -> bool {
             && (subset.green <= BAG_CONTENTS.green)
             && (subset.blue <= BAG_CONTENTS.blue)
     })
+}
+
+fn get_minimum_cube_count(game: &Game) -> HandfulCount {
+    game.subsets.iter().fold(
+        HandfulCount {
+            red: 0,
+            green: 0,
+            blue: 0,
+        },
+        |current, next| HandfulCount {
+            red: current.red.max(next.red),
+            green: current.green.max(next.green),
+            blue: current.blue.max(next.blue),
+        },
+    )
 }
