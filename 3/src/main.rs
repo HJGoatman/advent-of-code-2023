@@ -4,6 +4,7 @@ use std::env;
 use std::fs;
 use std::panic;
 use std::str::FromStr;
+use std::usize;
 
 use env_logger;
 use log;
@@ -17,7 +18,13 @@ struct Position {
 #[derive(Debug)]
 enum SchematicPart {
     Number(u32),
-    Symbol,
+    Symbol(SymbolType),
+}
+
+#[derive(Debug)]
+enum SymbolType {
+    Star,
+    Other,
 }
 
 #[derive(Debug)]
@@ -82,13 +89,23 @@ impl FromStr for EngineSchematic {
             }
 
             // Assume the character to be a symbol.
-            parts.push(SchematicPart::Symbol);
+            let symbol_type = if character == '*' {
+                SymbolType::Star
+            } else {
+                SymbolType::Other
+            };
+            parts.push(SchematicPart::Symbol(symbol_type));
             part_lookup.insert(Position { x, y }, new_part_index);
             x += 1;
         }
 
         Ok(EngineSchematic { parts, part_lookup })
     }
+}
+
+#[derive(Debug)]
+struct Gear {
+    gear_ratio: u32,
 }
 
 fn load_input() -> String {
@@ -110,42 +127,21 @@ fn main() {
 
     let part_numbers_sum: u32 = part_numbers.iter().sum();
     println!("{}", part_numbers_sum);
+
+    let gears = get_gears(&engine_schematic);
+    log::debug!("Gears: {:?}", gears);
+
+    let gear_ratio_sum: u32 = gears.iter().map(|gear| gear.gear_ratio).sum();
+    println!("{}", gear_ratio_sum);
 }
 
 fn get_part_numbers(schematic: &EngineSchematic) -> Vec<u32> {
     let mut part_indexes: HashSet<usize> = HashSet::new();
 
     for (position, part_index) in schematic.part_lookup.iter() {
-        if let SchematicPart::Symbol = schematic.parts[*part_index] {
-            for dx in -1..2 {
-                let x = position.x as i32 + dx;
-
-                if x.is_negative() {
-                    continue;
-                }
-
-                for dy in -1..2 {
-                    let y = position.y as i32 + dy;
-
-                    if y.is_negative() {
-                        continue;
-                    }
-
-                    if (dx == 0) && (dy == 0) {
-                        continue;
-                    }
-
-                    let search_position = Position {
-                        x: x as usize,
-                        y: y as usize,
-                    };
-
-                    match schematic.part_lookup.get(&search_position) {
-                        Some(part_index) => part_indexes.insert(*part_index),
-                        _ => continue,
-                    };
-                }
-            }
+        if let SchematicPart::Symbol(_) = schematic.parts[*part_index] {
+            let adjacent_part_indexes = get_adjacent_part_indexes(&schematic.part_lookup, position);
+            part_indexes.extend(adjacent_part_indexes)
         }
     }
 
@@ -155,8 +151,77 @@ fn get_part_numbers(schematic: &EngineSchematic) -> Vec<u32> {
             if let SchematicPart::Number(part_number) = schematic.parts[index] {
                 part_number
             } else {
+                // I've got lucky with my input as no symbols are adjacent.
                 panic!("Should be a part number!");
             }
         })
         .collect()
+}
+
+fn get_adjacent_part_indexes(
+    part_lookup: &HashMap<Position, usize>,
+    position: &Position,
+) -> Vec<usize> {
+    let mut adjacent_part_indexes = HashSet::new();
+
+    for dx in -1..2 {
+        let x = position.x as i32 + dx;
+
+        if x.is_negative() {
+            continue;
+        }
+
+        for dy in -1..2 {
+            let y = position.y as i32 + dy;
+
+            if y.is_negative() {
+                continue;
+            }
+
+            if (dx == 0) && (dy == 0) {
+                continue;
+            }
+
+            let search_position = Position {
+                x: x as usize,
+                y: y as usize,
+            };
+
+            match part_lookup.get(&search_position) {
+                Some(part_index) => adjacent_part_indexes.insert(*part_index),
+                _ => continue,
+            };
+        }
+    }
+
+    adjacent_part_indexes.into_iter().collect()
+}
+
+fn get_gears(schematic: &EngineSchematic) -> Vec<Gear> {
+    let mut gears = Vec::new();
+
+    for (position, part_index) in schematic.part_lookup.iter() {
+        if let SchematicPart::Symbol(SymbolType::Star) = schematic.parts[*part_index] {
+            let adjacent_part_indexes = get_adjacent_part_indexes(&schematic.part_lookup, position);
+
+            if adjacent_part_indexes.len() != 2 {
+                continue;
+            }
+
+            let gear_ratio: u32 = adjacent_part_indexes
+                .into_iter()
+                .map(|index| {
+                    if let SchematicPart::Number(part_number) = schematic.parts[index] {
+                        part_number
+                    } else {
+                        panic!("Should be a part number!");
+                    }
+                })
+                .product();
+
+            gears.push(Gear { gear_ratio });
+        }
+    }
+
+    gears
 }
