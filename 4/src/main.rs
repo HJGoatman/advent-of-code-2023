@@ -104,22 +104,57 @@ fn main() {
 
     let total_points: u32 = scratchcards.iter().map(get_scratchcard_points).sum();
     println!("{}", total_points);
+
+    let matches: Vec<usize> = scratchcards.iter().map(get_number_of_matches).collect();
+    log::debug!("Matches: {:?}", matches);
+
+    let copies: Vec<u32> = matches.iter().enumerate().rev().fold(
+        vec![1; scratchcards.len()],
+        |mut cards_won, (index, number_of_matches)| {
+            let max_index = scratchcards.len() - 1;
+
+            if index == max_index {
+                return cards_won;
+            }
+
+            let start_index = index + 1;
+            let last_index = (start_index + number_of_matches).min(max_index + 1);
+
+            let new_cards: u32 = cards_won
+                .get((index + 1)..last_index)
+                .unwrap()
+                .into_iter()
+                .cloned()
+                .sum();
+
+            cards_won[index] += new_cards;
+            cards_won
+        },
+    );
+
+    log::debug!("Copies: {:?}", copies);
+
+    let total_scratchcards: u32 = copies.iter().sum();
+    println!("{}", total_scratchcards);
 }
 
 fn get_scratchcard_points(scratchcard: &Scratchcard) -> u32 {
+    let number_of_matches = get_number_of_matches(scratchcard);
+
+    if number_of_matches == 0 {
+        return 0;
+    }
+
+    const BASE_2: u32 = 2;
+    let points = BASE_2.pow((number_of_matches as u32) - 1);
+    points
+}
+
+fn get_number_of_matches(scratchcard: &Scratchcard) -> usize {
     scratchcard
         .player_numbers
         .values
         .iter()
-        .fold(0, |total, player_number| {
-            if scratchcard.winning_numbers.values.contains(player_number) {
-                if total == 0 {
-                    return 1;
-                }
-
-                return total * 2;
-            } else {
-                return total;
-            }
-        })
+        .filter(|player_number| scratchcard.winning_numbers.values.contains(player_number))
+        .count()
 }
