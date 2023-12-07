@@ -5,8 +5,8 @@ use std::fs;
 use std::num::ParseIntError;
 
 struct Race {
-    time: u16,
-    record_distance: u16,
+    time: u64,
+    record_distance: u64,
 }
 
 fn load_input() -> String {
@@ -14,11 +14,15 @@ fn load_input() -> String {
     fs::read_to_string(args.get(1).unwrap()).expect("Should have been able to read the file")
 }
 
-fn parse_document_row(s: &str) -> Result<Vec<u16>, ParseIntError> {
+fn parse_document_row(s: &str) -> Result<Vec<u64>, ParseIntError> {
     s.split_whitespace()
         .skip(1)
-        .map(|s| s.parse::<u16>())
+        .map(|s| s.parse::<u64>())
         .collect()
+}
+
+fn parse_part_2_document_row(s: &str) -> Result<u64, ParseIntError> {
+    s.split_whitespace().skip(1).collect::<String>().parse()
 }
 
 #[derive(Debug)]
@@ -41,36 +45,47 @@ fn main() {
         })
         .collect();
 
-    let ways_of_winning_each_race: Vec<u32> = races
+    let ways_of_winning_each_race: Vec<u64> = races
         .iter()
         .map(|race| {
             calculate_number_of_ways_of_winning(race.record_distance + 1, race.time)
                 .map(|v| v.into())
                 .ok_or(ImpossibleToWinError)
         })
-        .collect::<Result<Vec<u32>, ImpossibleToWinError>>()
+        .collect::<Result<Vec<u64>, ImpossibleToWinError>>()
         .unwrap();
 
     log::debug!("{:?}", ways_of_winning_each_race);
-    let margin_of_error: u32 = ways_of_winning_each_race.iter().product();
+    let margin_of_error: u64 = ways_of_winning_each_race.iter().product();
 
     println!("{}", margin_of_error);
+
+    let time: u64 = parse_part_2_document_row(lines.get(0).unwrap()).unwrap();
+    let record_distance: u64 = parse_part_2_document_row(lines.get(1).unwrap()).unwrap();
+
+    let race = Race {
+        time,
+        record_distance,
+    };
+    let ways_of_winning =
+        calculate_number_of_ways_of_winning(race.record_distance, race.time).unwrap();
+    println!("{}", ways_of_winning);
 }
 
-fn calculate_number_of_ways_of_winning(target_distance: u16, total_time: u16) -> Option<u16> {
-    const STARTING_SPEED_MILLIMETERS_PER_MILLISECOND: f32 = 0.;
-    const CHARGE_BUTTON_SPEED_INCREASE_MILLIMETERS_PER_SECOND: f32 = 1.;
+fn calculate_number_of_ways_of_winning(target_distance: u64, total_time: u64) -> Option<u64> {
+    const STARTING_SPEED_MILLIMETERS_PER_MILLISECOND: f64 = 0.;
+    const CHARGE_BUTTON_SPEED_INCREASE_MILLIMETERS_PER_SECOND: f64 = 1.;
 
-    let total_time: f32 = total_time.into();
-    let target_distance: f32 = target_distance.into();
+    let total_time: f64 = total_time as f64;
+    let target_distance: f64 = target_distance as f64;
 
-    let a: f32 = -1.;
-    let b: f32 = total_time * CHARGE_BUTTON_SPEED_INCREASE_MILLIMETERS_PER_SECOND;
-    let c: f32 = STARTING_SPEED_MILLIMETERS_PER_MILLISECOND - target_distance;
+    let a: f64 = -1.;
+    let b: f64 = total_time * CHARGE_BUTTON_SPEED_INCREASE_MILLIMETERS_PER_SECOND;
+    let c: f64 = STARTING_SPEED_MILLIMETERS_PER_MILLISECOND - target_distance;
 
     log::trace!("(a, b, c): ({}, {}, {})", a, b, c);
 
-    let discriminant: f32 = b.powf(2.) - 4. * a * c;
+    let discriminant: f64 = b.powf(2.) - 4. * a * c;
 
     log::trace!("Discriminant: {}", discriminant);
 
@@ -91,8 +106,8 @@ fn calculate_number_of_ways_of_winning(target_distance: u16, total_time: u16) ->
         max_time_taken_holding_button
     );
 
-    let integer_max_time: u16 = max_time_taken_holding_button.ceil() as u16;
-    let integer_min_time: u16 = min_time_taken_holding_button.ceil() as u16;
+    let integer_max_time: u64 = max_time_taken_holding_button.ceil() as u64;
+    let integer_min_time: u64 = min_time_taken_holding_button.ceil() as u64;
 
     return Some(integer_max_time - integer_min_time);
 }
