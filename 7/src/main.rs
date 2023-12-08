@@ -11,6 +11,26 @@ struct Hand {
     cards: [Label; NUM_CARDS_IN_HAND],
 }
 
+impl Hand {
+    fn with_joker_rule(self) -> Hand {
+        let cards: [Label; NUM_CARDS_IN_HAND] = self
+            .cards
+            .iter()
+            .cloned()
+            .map(|label| match label {
+                Label::Jack => Label::Joker,
+                rest => rest,
+            })
+            .collect::<Vec<Label>>()
+            .try_into()
+            .unwrap();
+
+        let hand_type = determine_hand_type(&cards).unwrap();
+
+        Hand { hand_type, cards }
+    }
+}
+
 impl FromStr for Hand {
     type Err = ParseHandError;
 
@@ -35,40 +55,35 @@ fn determine_hand_type(cards: &[Label; NUM_CARDS_IN_HAND]) -> Result<HandType, P
         *card_counts.entry(*card).or_default() += 1;
     }
 
+    if let Some(num_jokers) = card_counts.remove(&Label::Joker) {
+        let (max_label, _): (&Label, &usize) = card_counts
+            .iter()
+            .max_by(|(_, a), (_, b)| a.cmp(&b))
+            .unwrap_or_else(|| (&Label::Joker, &0));
+
+        log::trace!("Max Label: {:?}", max_label);
+
+        card_counts
+            .entry(*max_label)
+            .and_modify(|value| *value += num_jokers)
+            .or_insert(num_jokers);
+    }
+
     log::trace!("{:?}", card_counts);
 
     let mut counts: Vec<usize> = card_counts.values().cloned().collect();
     counts.sort();
 
-    if counts == vec![5] {
-        return Ok(HandType::FiveOfAKind);
+    match counts[..] {
+        [5] => Ok(HandType::FiveOfAKind),
+        [1, 4] => Ok(HandType::FourOfAKind),
+        [2, 3] => Ok(HandType::FullHouse),
+        [1, 1, 3] => Ok(HandType::ThreeOfAKind),
+        [1, 2, 2] => Ok(HandType::TwoPair),
+        [1, 1, 1, 2] => Ok(HandType::OnePair),
+        [1, 1, 1, 1, 1] => Ok(HandType::HighCard),
+        _ => Err(ParseHandError::UnknownHandType),
     }
-
-    if counts == vec![1, 4] {
-        return Ok(HandType::FourOfAKind);
-    }
-
-    if counts == vec![2, 3] {
-        return Ok(HandType::FullHouse);
-    }
-
-    if counts == vec![1, 1, 3] {
-        return Ok(HandType::ThreeOfAKind);
-    }
-
-    if counts == vec![1, 2, 2] {
-        return Ok(HandType::TwoPair);
-    }
-
-    if counts == vec![1, 1, 1, 2] {
-        return Ok(HandType::OnePair);
-    }
-
-    if counts == vec![1, 1, 1, 1, 1] {
-        return Ok(HandType::HighCard);
-    }
-
-    return Err(ParseHandError::UnknownHandType);
 }
 
 #[derive(Debug)]
@@ -91,6 +106,7 @@ enum HandType {
 
 #[derive(Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
 enum Label {
+    Joker,
     Two,
     Three,
     Four,
@@ -164,15 +180,28 @@ fn main() {
 
     log::debug!("Ranked hands: {:#?}", hands);
 
-    let total_winnings: Bid = hands
+    let total_winnings: Bid = calculate_total_winnings(&hands);
+    println!("{}", total_winnings);
+
+    let mut joker_hands: Vec<(Hand, Bid)> = hands
+        .into_iter()
+        .map(|(hand, bid)| (hand.with_joker_rule(), bid))
+        .collect();
+
+    joker_hands.sort_by(|a, b| a.0.cmp(&b.0));
+
+    let joker_total_winnings = calculate_total_winnings(&joker_hands);
+    println!("{}", joker_total_winnings);
+}
+
+fn calculate_total_winnings(sorted_hands: &[(Hand, Bid)]) -> Bid {
+    sorted_hands
         .iter()
         .enumerate()
         .map(|(i, hand)| ((i + 1) as Bid, hand))
         .inspect(|a| log::trace!("{:?}", a))
         .map(|(rank, (_, bid))| bid * rank)
-        .sum();
-
-    println!("{}", total_winnings);
+        .sum()
 }
 
 fn load_input() -> String {
