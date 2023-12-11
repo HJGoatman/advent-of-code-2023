@@ -35,6 +35,20 @@ fn main() {
         .sum();
 
     println!("{}", sum_of_next_values);
+
+    let reverse_sequences = sequences
+        .iter()
+        .cloned()
+        .map(|seq| seq.into_iter().rev().collect::<Vec<i128>>())
+        .collect::<Vec<Vec<i128>>>();
+
+    let sum_of_previous_values: i128 = reverse_sequences
+        .iter()
+        .map(|sequence| find_next_value(sequence))
+        .inspect(|v| log::debug!("{}", v))
+        .sum();
+
+    println!("{}", sum_of_previous_values)
 }
 
 fn find_next_value(sequence: &[i128]) -> i128 {
