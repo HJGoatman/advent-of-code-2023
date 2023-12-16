@@ -4,12 +4,12 @@ use std::env;
 use std::fmt::Display;
 use std::fs;
 use std::str::FromStr;
-use std::u32;
+use std::u64;
 
 #[derive(Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 struct Coordinate {
-    y: u32,
-    x: u32,
+    y: u64,
+    x: u64,
 }
 
 #[derive(Debug)]
@@ -87,16 +87,21 @@ fn main() {
     let image: Image = input.parse().unwrap();
     log::debug!("{}", image);
 
-    let adjusted_image = account_for_gravitational_effects(&image);
+    let adjusted_image = account_for_gravitational_effects(&image, 2);
     log::debug!("{}", adjusted_image);
 
     let shortest_paths_between_galaxies = find_shortest_paths_between_galaxies(&adjusted_image);
     log::debug!("Shortest Paths: {:?}", shortest_paths_between_galaxies);
-    let shortest_paths_between_galaxies_sum: u32 = shortest_paths_between_galaxies.iter().sum();
+    let shortest_paths_between_galaxies_sum: u64 = shortest_paths_between_galaxies.iter().sum();
+    println!("{}", shortest_paths_between_galaxies_sum);
+
+    let adjusted_image = account_for_gravitational_effects(&image, 1000000);
+    let shortest_paths_between_galaxies = find_shortest_paths_between_galaxies(&adjusted_image);
+    let shortest_paths_between_galaxies_sum: u64 = shortest_paths_between_galaxies.iter().sum();
     println!("{}", shortest_paths_between_galaxies_sum);
 }
 
-fn find_shortest_paths_between_galaxies(adjusted_image: &Image) -> Vec<u32> {
+fn find_shortest_paths_between_galaxies(adjusted_image: &Image) -> Vec<u64> {
     adjusted_image
         .pixels
         .iter()
@@ -114,9 +119,9 @@ fn find_shortest_paths_between_galaxies(adjusted_image: &Image) -> Vec<u32> {
         .collect()
 }
 
-fn account_for_gravitational_effects(image: &Image) -> Image {
-    let xs: BTreeSet<u32> = image.pixels.iter().map(|coordinate| coordinate.x).collect();
-    let ys: BTreeSet<u32> = image.pixels.iter().map(|coordinate| coordinate.y).collect();
+fn account_for_gravitational_effects(image: &Image, gap_increase_factor: u64) -> Image {
+    let xs: BTreeSet<u64> = image.pixels.iter().map(|coordinate| coordinate.x).collect();
+    let ys: BTreeSet<u64> = image.pixels.iter().map(|coordinate| coordinate.y).collect();
 
     log::trace!("{:?}", xs);
     log::trace!("{:?}", ys);
@@ -126,8 +131,8 @@ fn account_for_gravitational_effects(image: &Image) -> Image {
     log::trace!("X gaps: {:?}", x_gaps);
     log::trace!("Y gaps: {:?}", y_gaps);
 
-    let x_shifts = calculate_shifts(&x_gaps);
-    let y_shifts = calculate_shifts(&y_gaps);
+    let x_shifts = calculate_shifts(&x_gaps, gap_increase_factor);
+    let y_shifts = calculate_shifts(&y_gaps, gap_increase_factor);
 
     log::trace!("X shifts: {:?}", x_shifts);
     log::trace!("Y shifts: {:?}", y_shifts);
@@ -160,7 +165,7 @@ fn account_for_gravitational_effects(image: &Image) -> Image {
     Image { pixels: shifted }
 }
 
-fn find_gaps(ordinates: &BTreeSet<u32>) -> Vec<(u32, u32)> {
+fn find_gaps(ordinates: &BTreeSet<u64>) -> Vec<(u64, u64)> {
     let mut gaps = Vec::new();
     let mut ordinate_iter = ordinates.iter();
 
@@ -181,15 +186,17 @@ fn find_gaps(ordinates: &BTreeSet<u32>) -> Vec<(u32, u32)> {
     gaps
 }
 
-fn calculate_shifts(gaps: &[(u32, u32)]) -> Vec<(u32, u32)> {
+fn calculate_shifts(gaps: &[(u64, u64)], gap_increase_factor: u64) -> Vec<(u64, u64)> {
     let mut cumulative_gap_size = 0;
     let mut shifts = Vec::new();
 
     for (gap_start, gap_lengh) in gaps {
+        let gap_increase = gap_lengh * (gap_increase_factor - 1);
+
         let shift_start = *gap_start;
-        let shift_amount = cumulative_gap_size + *gap_lengh;
+        let shift_amount = cumulative_gap_size + gap_increase;
         shifts.push((shift_start, shift_amount));
-        cumulative_gap_size += gap_lengh;
+        cumulative_gap_size += gap_increase;
     }
 
     shifts
