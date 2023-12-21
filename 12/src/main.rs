@@ -1,16 +1,12 @@
-
-use itertools::Itertools;
-
+use std::collections::HashMap;
 use std::env;
+use std::fmt::Display;
 use std::fs;
 use std::num::ParseIntError;
-use std::ops::Range;
 use std::str::FromStr;
 use std::usize;
 
-use crate::target_contingous_record_iterator::TargetContingousRecordIterator;
-
-#[derive(Debug, Eq, PartialEq, Clone, Copy)]
+#[derive(Debug, Eq, PartialEq, Clone, Copy, Hash)]
 pub enum Condition {
     Operational,
     Damaged,
@@ -59,44 +55,27 @@ impl FromStr for ConditionRecord {
     }
 }
 
-mod target_contingous_record_iterator {
-    use itertools::Itertools;
-    use std::{ops::Range};
+impl Display for ConditionRecord {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let format_1: String = self
+            .format_1
+            .iter()
+            .map(|condition| match condition {
+                Condition::Operational => '.',
+                Condition::Damaged => '#',
+                Condition::Unknown => '?',
+            })
+            .collect();
 
-    use crate::Condition;
+        let format_2 = self
+            .format_2
+            .iter()
+            .map(|num| num.to_string())
+            .collect::<Vec<String>>()
+            .join(",");
 
-    pub struct TargetContingousRecordIterator {
-        conditions: Vec<Condition>,
-        iterator: Box<dyn Iterator<Item = Vec<usize>>>,
-        max_conditions: usize,
-    }
-
-    impl TargetContingousRecordIterator {
-        pub fn new(
-            contingous_record: Vec<(Condition, Range<usize>)>,
-            max_conditions: usize,
-        ) -> TargetContingousRecordIterator {
-            let (conditions, ranges): (Vec<Condition>, Vec<Range<usize>>) =
-                contingous_record.into_iter().unzip();
-
-            let iterator = Box::new(ranges.into_iter().multi_cartesian_product());
-
-            TargetContingousRecordIterator {
-                conditions,
-                iterator,
-                max_conditions,
-            }
-        }
-    }
-
-    impl Iterator for TargetContingousRecordIterator {
-        type Item = Vec<(Condition, usize)>;
-
-        fn next(&mut self) -> Option<Self::Item> {
-            self.iterator
-                .find(|values| values.iter().sum::<usize>() == self.max_conditions)
-                .map(|values| self.conditions.iter().cloned().zip_eq(values).collect())
-        }
+        f.write_fmt(format_args!("{} {}", format_1, format_2))?;
+        Ok(())
     }
 }
 
@@ -116,108 +95,211 @@ fn main() {
         .collect::<Result<Vec<ConditionRecord>, ParseConditionRecordError>>()
         .unwrap();
 
+    let mut cache = HashMap::new();
+
     let arrangements: Vec<usize> = condition_records
         .iter()
-        // .take(1)
-        .inspect(|_| log::debug!(""))
-        .inspect(|record| log::debug!("{:?}", record))
-        .map(|record| find_possible_arrangements(&record.format_1, &record.format_2))
-        .inspect(|arrangements| log::debug!("Arragments: {}", arrangements))
+        .map(|record| find_possible_arrangements(&mut cache, &record.format_1, &record.format_2))
+        .inspect(|arrangements| log::debug!("Arrangements: {}", arrangements))
+        .collect();
+
+    let arrangements_sum: usize = arrangements.iter().sum();
+    println!("{}", arrangements_sum);
+
+    let unfolded_condition_records: Vec<ConditionRecord> = condition_records
+        .iter()
+        .map(unfold_condition_record)
+        .collect();
+
+    let arrangements: Vec<usize> = unfolded_condition_records
+        .iter()
+        .map(|record| find_possible_arrangements(&mut cache, &record.format_1, &record.format_2))
+        .inspect(|arrangements| log::debug!("Arrangements: {}", arrangements))
         .collect();
 
     let arrangements_sum: usize = arrangements.iter().sum();
     println!("{}", arrangements_sum);
 }
 
-fn find_possible_arrangements(damaged_record: &[Condition], criteria: &[usize]) -> usize {
-    let contingous_record = convert_to_contingous_record(damaged_record);
-    let target_contingous_record =
-        calculate_target_contingous_record(criteria, damaged_record.len() + 1);
-    log::debug!("Contingous Record: {:?}", contingous_record);
-    log::debug!("Target Contingous Record: {:?}", target_contingous_record);
+fn unfold_condition_record(condition_record: &ConditionRecord) -> ConditionRecord {
+    let mut format_1 = Vec::new();
+    let mut format_2 = Vec::new();
 
-    let target_contingous_record_iterator =
-        TargetContingousRecordIterator::new(target_contingous_record, damaged_record.len());
+    for i in 0..5 {
+        format_1.append(&mut condition_record.format_1.to_vec());
+        format_2.append(&mut condition_record.format_2.to_vec());
 
-    let mut possible_arrangements = 0;
-
-    for record in target_contingous_record_iterator {
-        let unstacked = unstack_record(record);
-
-        let is_match =
-            damaged_record
-                .iter()
-                .zip_eq(unstacked.iter())
-                .all(|(damaged, target)| match (damaged, target) {
-                    (Condition::Operational, Condition::Operational) => true,
-                    (Condition::Damaged, Condition::Damaged) => true,
-                    (Condition::Unknown, Condition::Operational | Condition::Damaged) => true,
-                    (_, _) => false,
-                });
-
-        log::trace!("{:?}", damaged_record);
-        log::trace!("{:?}", unstacked);
-
-        if is_match {
-            possible_arrangements += 1;
+        if i < 4 {
+            format_1.push(Condition::Unknown);
         }
     }
 
-    possible_arrangements
+    ConditionRecord { format_1, format_2 }
 }
 
-fn unstack_record(record: Vec<(Condition, usize)>) -> Vec<Condition> {
-    let mut unstacked = Vec::new();
-
-    for (condition, amount) in record {
-        unstacked.append(&mut vec![condition; amount])
-    }
-
-    unstacked
-}
-
-fn calculate_target_contingous_record(
+fn find_possible_arrangements(
+    cache: &mut HashMap<(Vec<Condition>, Vec<usize>), usize>,
+    record: &[Condition],
     criteria: &[usize],
-    record_length: usize,
-) -> Vec<(Condition, Range<usize>)> {
-    let total_damaged: usize = criteria.iter().sum();
-    let maximum = record_length - total_damaged;
-
-    let mut target_contingous_record = Vec::new();
-    target_contingous_record.push((Condition::Operational, 0..maximum));
-
-    for (i, number_damaged) in criteria.iter().cloned().enumerate() {
-        target_contingous_record.push((Condition::Damaged, number_damaged..number_damaged + 1));
-
-        if i < criteria.len() - 1 {
-            target_contingous_record.push((Condition::Operational, 1..maximum));
+) -> usize {
+    log::trace!(
+        "{}",
+        ConditionRecord {
+            format_1: record.to_vec(),
+            format_2: criteria.to_vec()
         }
+    );
+
+    if let Some(result) = cache.get(&(record.to_vec(), criteria.to_vec())) {
+        log::debug!("Found Cached result!");
+        return *result;
     }
 
-    target_contingous_record.push((Condition::Operational, 0..maximum));
+    let compressed_record = compress_record(record);
+    if compressed_record.len() != record.len() {
+        log::trace!("Reducing!");
 
-    target_contingous_record
+        return find_and_cache(cache, &compressed_record, criteria);
+    }
+
+    let maybe_current_criteria = calculate_current_criteria(record);
+
+    log::trace!("{:?}", maybe_current_criteria);
+
+    match maybe_current_criteria {
+        CalculateCriteriaResult::Full(current_criteria) => {
+            log::trace!("{:?}", current_criteria);
+
+            if &current_criteria == criteria {
+                return 1;
+            } else {
+                return 0;
+            }
+        }
+        CalculateCriteriaResult::PartialIncomplete(current_criteria) => {
+            if !current_criteria.is_empty()
+                && !criteria.is_empty()
+                && (current_criteria.len() <= criteria.len())
+            {
+                let last_index = current_criteria.len() - 1;
+                if current_criteria
+                    .iter()
+                    .zip(criteria[..last_index].iter())
+                    .any(|(a, b)| a != b)
+                {
+                    return 0;
+                }
+
+                if current_criteria[last_index] > criteria[last_index] {
+                    return 0;
+                }
+            }
+        }
+        CalculateCriteriaResult::PartialComplete(current_criteria, splitting_index) => {
+            if !current_criteria.is_empty() {
+                if current_criteria.len() > criteria.len() {
+                    return 0;
+                }
+
+                if current_criteria == criteria[..current_criteria.len()] {
+                    return find_and_cache(
+                        cache,
+                        &record[splitting_index..],
+                        &criteria[current_criteria.len()..],
+                    );
+                } else {
+                    return 0;
+                }
+            }
+        }
+    };
+
+    let unknown_index = record
+        .iter()
+        .position(|condition| *condition == Condition::Unknown)
+        .unwrap();
+
+    let mut damaged_branch = record.to_vec();
+    damaged_branch[unknown_index] = Condition::Damaged;
+
+    let mut operational_branch = record.to_vec();
+    operational_branch[unknown_index] = Condition::Operational;
+
+    return find_and_cache(cache, &damaged_branch, criteria)
+        + find_and_cache(cache, &operational_branch, criteria);
 }
 
-fn convert_to_contingous_record(record: &[Condition]) -> Vec<(Condition, usize)> {
-    let mut contingous_record = Vec::new();
+fn find_and_cache(
+    cache: &mut HashMap<(Vec<Condition>, Vec<usize>), usize>,
+    record: &[Condition],
+    criteria: &[usize],
+) -> usize {
+    let result = find_possible_arrangements(cache, record, criteria);
+    cache.insert((record.to_vec(), criteria.to_vec()), result);
+    result
+}
 
-    let mut maybe_prev_condition: Option<Condition> = None;
-    let mut condition_count = 0;
+#[derive(Debug)]
+enum CalculateCriteriaResult {
+    Full(Vec<usize>),
+    PartialComplete(Vec<usize>, usize),
+    PartialIncomplete(Vec<usize>),
+}
 
-    let record_iter = record.iter();
-    for condition in record_iter {
-        if let Some(prev_condition) = maybe_prev_condition {
-            if *condition == prev_condition {
-                condition_count += 1;
-                continue;
+fn calculate_current_criteria(format_1: &[Condition]) -> CalculateCriteriaResult {
+    let mut criteria = Vec::new();
+    let mut num_contingous_damaged_springs = 0;
+
+    for (i, condition) in format_1.iter().enumerate() {
+        match condition {
+            Condition::Unknown => {
+                if num_contingous_damaged_springs > 0 {
+                    criteria.push(num_contingous_damaged_springs);
+                    return CalculateCriteriaResult::PartialIncomplete(criteria);
+                }
+                return CalculateCriteriaResult::PartialComplete(criteria, i);
             }
-
-            contingous_record.push((prev_condition, condition_count));
+            Condition::Damaged => {
+                num_contingous_damaged_springs += 1;
+            }
+            Condition::Operational => {
+                if num_contingous_damaged_springs > 0 {
+                    criteria.push(num_contingous_damaged_springs);
+                    num_contingous_damaged_springs = 0;
+                }
+            }
         }
-        maybe_prev_condition = Some(*condition);
-        condition_count = 1;
     }
-    contingous_record.push((maybe_prev_condition.unwrap(), condition_count));
-    contingous_record
+
+    if num_contingous_damaged_springs > 0 {
+        criteria.push(num_contingous_damaged_springs);
+    }
+
+    CalculateCriteriaResult::Full(criteria)
+}
+
+fn compress_record(record: &[Condition]) -> Vec<Condition> {
+    let mut reduced: Vec<Condition> = record.iter().fold(vec![], |mut current, next| {
+        if *next == Condition::Operational {
+            if let Some(last) = current.last() {
+                if *last == Condition::Operational {
+                    return current;
+                }
+            }
+        }
+
+        current.push(*next);
+        current
+    });
+
+    reduced = reduced
+        .into_iter()
+        .rev()
+        .skip_while(|v| *v == Condition::Operational)
+        .collect::<Vec<Condition>>()
+        .into_iter()
+        .rev()
+        .collect();
+
+    reduced
 }
