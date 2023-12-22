@@ -28,25 +28,68 @@ fn main() {
     let input = load_input();
     let patterns: Vec<Pattern> = parse_patterns(&input).unwrap();
 
-    let reflections: Vec<(usize, Reflection, usize)> = patterns
+    let reflections: Vec<(Reflection, usize)> = patterns
         .iter()
-        .enumerate()
-        .flat_map(|(i, pattern)| {
-            find_reflection(&pattern)
-                .into_iter()
-                .map(move |(reflection, index_start)| (i, reflection, index_start))
-        })
+        .map(|pattern| find_reflection(&pattern, None).unwrap())
         .inspect(|reflection| log::trace!("{:?}", reflection))
         .collect();
 
     let summary = summarise(&reflections);
-    println!("{}", summary)
+    println!("{}", summary);
+
+    let new_reflections: Vec<(Reflection, usize)> = patterns
+        .iter()
+        .zip(reflections)
+        .map(|(pattern, reflection)| find_clean_reflection(pattern, reflection))
+        .collect();
+    let summary = summarise(&new_reflections);
+    println!("{}", summary);
 }
 
-fn summarise(reflections: &[(usize, Reflection, usize)]) -> usize {
+fn find_clean_reflection(pattern: &[Line], reflection: (Reflection, usize)) -> (Reflection, usize) {
+    for i in 0..pattern.len() {
+        let line = &pattern[i];
+
+        for possible_smudgeless_line in get_possible_smudgeless_lines(line) {
+            log::trace!("{:?}", possible_smudgeless_line);
+            let new_pattern = [
+                &pattern[..i],
+                &[possible_smudgeless_line],
+                &pattern[i + 1..],
+            ]
+            .concat();
+
+            if let Some(possible_new_reflection) = find_reflection(&new_pattern, Some(reflection)) {
+                return possible_new_reflection;
+            }
+        }
+    }
+
+    panic!("No other reflection!");
+}
+
+fn get_possible_smudgeless_lines(line: &[Part]) -> Vec<Line> {
+    let mut lines = Vec::new();
+
+    for i in 0..line.len() {
+        let part = &line[i];
+
+        let new_part = match part {
+            Part::Ash => Part::Rock,
+            Part::Rock => Part::Ash,
+        };
+
+        let new_line = [&line[..i], &[new_part], &line[i + 1..]].concat();
+        lines.push(new_line);
+    }
+
+    lines
+}
+
+fn summarise(reflections: &[(Reflection, usize)]) -> usize {
     reflections
         .iter()
-        .fold(0, |curr, (_, reflection, index_start)| {
+        .fold(0, |curr, (reflection, index_start)| {
             curr + match reflection {
                 Reflection::Horizontal => 100 * *index_start,
                 Reflection::Vertical => *index_start,
@@ -54,14 +97,24 @@ fn summarise(reflections: &[(usize, Reflection, usize)]) -> usize {
         })
 }
 
-fn find_reflection(pattern: &[Line]) -> Vec<(Reflection, usize)> {
+fn find_reflection(
+    pattern: &[Line],
+    skip_reflection: Option<(Reflection, usize)>,
+) -> Option<(Reflection, usize)> {
     let transposed_pattern = transpose(pattern);
+    let maybe_vertical_reflection =
+        scan_for_reflection(&transposed_pattern, Reflection::Vertical, skip_reflection);
+    if let Some(vertical_reflection) = maybe_vertical_reflection {
+        return Some(vertical_reflection);
+    }
 
-    let mut reflections = scan_for_reflections(&transposed_pattern, Reflection::Vertical);
-    let mut horizontal_reflections = scan_for_reflections(pattern, Reflection::Horizontal);
+    let maybe_horizontal_reflection =
+        scan_for_reflection(pattern, Reflection::Horizontal, skip_reflection);
+    if let Some(horizontal_reflection) = maybe_horizontal_reflection {
+        return Some(horizontal_reflection);
+    }
 
-    reflections.append(&mut horizontal_reflections);
-    return reflections;
+    None
 }
 
 fn transpose(pattern: &[Line]) -> Pattern {
@@ -80,9 +133,11 @@ fn transpose(pattern: &[Line]) -> Pattern {
     transposed_pattern
 }
 
-fn scan_for_reflections(pattern: &[Line], reflection_type: Reflection) -> Vec<(Reflection, usize)> {
-    let mut reflections = Vec::new();
-
+fn scan_for_reflection(
+    pattern: &[Line],
+    reflection_type: Reflection,
+    skip_reflection: Option<(Reflection, usize)>,
+) -> Option<(Reflection, usize)> {
     for i in 0..pattern.len() - 1 {
         let j = i + 1;
 
@@ -91,12 +146,20 @@ fn scan_for_reflections(pattern: &[Line], reflection_type: Reflection) -> Vec<(R
             let reflection_confirmation = confirm_reflection(pattern, i);
 
             if reflection_confirmation {
-                reflections.push((reflection_type, i + 1));
+                let found_reflection = (reflection_type, i + 1);
+
+                if let Some(skip_reflection) = skip_reflection {
+                    if skip_reflection == found_reflection {
+                        continue;
+                    }
+                }
+
+                return Some(found_reflection);
             }
         }
     }
 
-    reflections
+    None
 }
 
 fn confirm_reflection(pattern: &[Line], i: usize) -> bool {
