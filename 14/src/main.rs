@@ -6,6 +6,7 @@ use platform::Space;
 use platform::TiltDirection;
 use platform::TiltResult;
 
+use std::collections::HashMap;
 use std::env;
 use std::fs;
 
@@ -18,15 +19,48 @@ fn main() {
     env_logger::init();
 
     let input = load_input();
-    let mut platform: Platform = input.parse().unwrap();
+    let platform: Platform = input.parse().unwrap();
+    let mut part_1_platform = platform.clone();
     log::debug!("{}", platform);
 
-    while platform.tilt(TiltDirection::North) == TiltResult::RocksMoved {}
+    while part_1_platform.tilt(TiltDirection::North) == TiltResult::RocksMoved {}
 
-    log::debug!("{}", platform);
+    log::debug!("{}", part_1_platform);
 
-    let total_load = calculate_total_load(&platform);
+    let total_load = calculate_total_load(&part_1_platform);
     println!("{}", total_load);
+
+    let mut part_2_platform = platform.clone();
+
+    const NUMBER_OF_CYCLES: usize = 1000000000;
+
+    spin_platform(&mut part_2_platform, NUMBER_OF_CYCLES);
+
+    let total_load = calculate_total_load(&part_2_platform);
+    println!("{}", total_load);
+}
+
+fn spin_platform(platform: &mut Platform, number_of_cycles: usize) {
+    let mut cache = HashMap::new();
+
+    let mut i = 0;
+    while i < number_of_cycles {
+        platform.spin_cycle();
+
+        if let Some(old_i) = cache.get(platform) {
+            log::trace!("i: {}, old_i: {}", i, old_i);
+            let i_difference = i - old_i;
+
+            let remaining_cycles = number_of_cycles - i;
+
+            let new_i = number_of_cycles - (remaining_cycles % i_difference);
+            i = new_i
+        } else {
+            cache.insert(platform.clone(), i);
+        }
+
+        i += 1;
+    }
 }
 
 fn calculate_total_load(platform: &Platform) -> u32 {

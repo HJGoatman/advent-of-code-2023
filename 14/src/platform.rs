@@ -6,7 +6,7 @@ pub struct Position {
     pub y: usize,
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub enum Space {
     RoundedRock,
     CubeShapedRock,
@@ -31,8 +31,12 @@ impl TryFrom<char> for Space {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
 pub enum TiltDirection {
     North,
+    West,
+    South,
+    East,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -41,7 +45,7 @@ pub enum TiltResult {
     NothingMoved,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Platform {
     spaces: Vec<Space>,
     width: usize,
@@ -81,16 +85,35 @@ impl Platform {
     pub fn tilt(&mut self, tilt_direction: TiltDirection) -> TiltResult {
         let mut tilt_result = TiltResult::NothingMoved;
 
-        for y in 0..self.height {
-            for x in 0..self.width {
-                let position = Position { x, y };
-                let position_below = Position { x, y: y + 1 };
+        let height = self.height;
+        let width = self.width;
 
+        let position_iter: Box<dyn Iterator<Item = Position>> = match tilt_direction {
+            TiltDirection::North => {
+                Box::new((0..height).flat_map(|y| (0..width).map(move |x| Position { x, y })))
+            }
+            TiltDirection::West => {
+                Box::new((0..width).flat_map(|x| (0..height).map(move |y| Position { x, y })))
+            }
+            TiltDirection::South => Box::new(
+                (0..height)
+                    .rev()
+                    .flat_map(|y| (0..width).rev().map(move |x| Position { x, y })),
+            ),
+            TiltDirection::East => Box::new(
+                (0..width)
+                    .rev()
+                    .flat_map(|x| (0..height).rev().map(move |y| Position { x, y })),
+            ),
+        };
+
+        for position in position_iter {
+            if let Some(adjacent_position) = get_adjacent_position(position, tilt_direction) {
                 if let (Some(space), Some(space_below)) =
-                    (self.get(position), self.get(position_below))
+                    (self.get(position), self.get(adjacent_position))
                 {
                     if space == Space::EmptySpace && space_below == Space::RoundedRock {
-                        self.swap(position, position_below);
+                        self.swap(position, adjacent_position);
                         tilt_result = TiltResult::RocksMoved;
                     }
                 }
@@ -98,6 +121,52 @@ impl Platform {
         }
 
         tilt_result
+    }
+
+    pub fn spin_cycle(&mut self) {
+        for direction in &[
+            TiltDirection::North,
+            TiltDirection::West,
+            TiltDirection::South,
+            TiltDirection::East,
+        ] {
+            while self.tilt(*direction) == TiltResult::RocksMoved {}
+            log::trace!("{:?}", direction);
+            log::trace!("{}", self);
+        }
+    }
+}
+
+fn get_adjacent_position(position: Position, tilt_direction: TiltDirection) -> Option<Position> {
+    match tilt_direction {
+        TiltDirection::North => Some(Position {
+            x: position.x,
+            y: position.y + 1,
+        }),
+        TiltDirection::East => {
+            if position.x == 0 {
+                return None;
+            }
+
+            Some(Position {
+                x: position.x - 1,
+                y: position.y,
+            })
+        }
+        TiltDirection::South => {
+            if position.y == 0 {
+                return None;
+            }
+
+            Some(Position {
+                x: position.x,
+                y: position.y - 1,
+            })
+        }
+        TiltDirection::West => Some(Position {
+            x: position.x + 1,
+            y: position.y,
+        }),
     }
 }
 
