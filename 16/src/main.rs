@@ -81,6 +81,35 @@ fn main() {
     let energised_tile_positions = simulate_beam_through_contraption(&contraption, start_beam);
     let total_energised_tile_positions = energised_tile_positions.len();
     println!("{}", total_energised_tile_positions);
+
+    let top_edges = [
+        (0, Direction::Down),
+        (contraption.get_height() - 1, Direction::Up),
+    ];
+    let top_edge_iter = top_edges.iter().flat_map(|(y, direction)| {
+        (0..contraption.get_width()).map(move |x| Beam {
+            position: Position { x, y: *y },
+            direction: *direction,
+        })
+    });
+
+    let side_edges = [
+        (0, Direction::Right),
+        (contraption.get_width() - 1, Direction::Left),
+    ];
+    let side_edge_iter = side_edges.iter().flat_map(|(x, direction)| {
+        (1..contraption.get_height() - 2).map(move |y| Beam {
+            position: Position { x: *x, y },
+            direction: *direction,
+        })
+    });
+
+    let most_tiles = top_edge_iter
+        .chain(side_edge_iter)
+        .map(|beam| simulate_beam_through_contraption(&contraption, beam).len())
+        .max()
+        .unwrap();
+    println!("{}", most_tiles);
 }
 
 fn simulate_beam_through_contraption(contraption: &Contraption, start: Beam) -> HashSet<Position> {
@@ -104,11 +133,10 @@ fn simulate_beam_through_contraption(contraption: &Contraption, start: Beam) -> 
         }
     }
 
-    let energised_tile_positions = distinct_beam_directions
+    distinct_beam_directions
         .into_iter()
         .map(|beam| beam.position)
-        .collect();
-    energised_tile_positions
+        .collect()
 }
 
 fn get_next_beams(beam: Beam, tile: Tile) -> Vec<Beam> {
