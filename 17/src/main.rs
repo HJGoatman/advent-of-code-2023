@@ -30,10 +30,29 @@ fn main() {
         y: heat_loss_map.get_height() - 1,
     };
 
+    const PART_1_MIN_BLOCKS_STRAIGHT: u8 = 0;
+    const PART_1_MAX_BLOCKS_STRAIGHT: u8 = 4;
+
     let min_heat_loss = shortest_path(
         &heat_loss_map,
         lava_pool_position,
         machine_parts_factory_position,
+        PART_1_MIN_BLOCKS_STRAIGHT,
+        PART_1_MAX_BLOCKS_STRAIGHT,
+    )
+    .unwrap();
+
+    println!("{}", min_heat_loss);
+
+    const PART_2_MIN_BLOCKS_STRAIGHT: u8 = 4;
+    const PART_2_MAX_BLOCKS_STRAIGHT: u8 = 11;
+
+    let min_heat_loss = shortest_path(
+        &heat_loss_map,
+        lava_pool_position,
+        machine_parts_factory_position,
+        PART_2_MIN_BLOCKS_STRAIGHT,
+        PART_2_MAX_BLOCKS_STRAIGHT,
     )
     .unwrap();
 
@@ -153,6 +172,8 @@ fn shortest_path(
     heat_loss_map: &HeatLossMap,
     start: Position,
     goal: Position,
+    min_blocks_straight: u8,
+    max_blocks_straight: u8,
 ) -> Option<HeatLossAmount> {
     let mut dist: HashMap<State, HeatLossAmount> = HashMap::new();
     let mut heap = MinPriorityQueue::new(dist.len());
@@ -168,7 +189,7 @@ fn shortest_path(
     heap.push(initial_state);
 
     while let Some(state) = heap.pop() {
-        if state.position == goal {
+        if state.position == goal && (state.distance_in_current_direction >= min_blocks_straight) {
             return Some(state.total_heat_loss);
         }
 
@@ -176,7 +197,12 @@ fn shortest_path(
             continue;
         }
 
-        for next_state in get_next_states(heat_loss_map, state) {
+        for next_state in get_next_states(
+            heat_loss_map,
+            state,
+            min_blocks_straight,
+            max_blocks_straight,
+        ) {
             if let Some(existing_total_heat_loss) = dist.get(&next_state) {
                 if next_state.total_heat_loss >= *existing_total_heat_loss {
                     continue;
@@ -191,7 +217,12 @@ fn shortest_path(
     None
 }
 
-fn get_next_states(heat_loss_map: &HeatLossMap, state: State) -> Vec<State> {
+fn get_next_states(
+    heat_loss_map: &HeatLossMap,
+    state: State,
+    min_blocks_straight: u8,
+    max_blocks_straight: u8,
+) -> Vec<State> {
     let next_turns = match state.direction {
         Some(Direction::Up) => vec![
             (Direction::Left, false),
@@ -214,18 +245,17 @@ fn get_next_states(heat_loss_map: &HeatLossMap, state: State) -> Vec<State> {
             (Direction::Up, false),
         ],
         None => vec![
-            (Direction::Left, false),
-            (Direction::Up, false),
-            (Direction::Right, false),
-            (Direction::Down, false),
+            (Direction::Left, true),
+            (Direction::Up, true),
+            (Direction::Right, true),
+            (Direction::Down, true),
         ],
     };
 
     let mut new_states = Vec::new();
 
     for (turn, is_straight) in next_turns {
-        const MAX_BLOCKS_STRAIGHT: u8 = 3;
-        if is_straight && (state.distance_in_current_direction + 1 >= MAX_BLOCKS_STRAIGHT) {
+        if !is_straight && (state.distance_in_current_direction < min_blocks_straight) {
             continue;
         }
 
@@ -234,19 +264,24 @@ fn get_next_states(heat_loss_map: &HeatLossMap, state: State) -> Vec<State> {
                 let total_heat_loss = state.total_heat_loss + current_g_score;
 
                 let direction = Some(turn);
-                let distance_in_current_direction = match is_straight {
-                    true => state.distance_in_current_direction + 1,
-                    false => 0,
+                let distance_in_current_direction = if state.direction.is_none() || is_straight {
+                    state.distance_in_current_direction + 1
+                } else {
+                    1
                 };
 
-                let state = State {
+                if distance_in_current_direction >= max_blocks_straight {
+                    continue;
+                }
+
+                let new_state = State {
                     position,
                     total_heat_loss,
                     direction,
                     distance_in_current_direction,
                 };
 
-                new_states.push(state);
+                new_states.push(new_state);
             };
         }
     }
