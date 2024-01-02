@@ -26,7 +26,7 @@ pub(super) enum ParseDigPlanError {
     ParseDigInstructionError(ParseDigInstructionError),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub(super) struct DigInstruction {
     pub(super) direction: Direction,
     pub(super) amount: DigAmount,
@@ -69,7 +69,7 @@ pub(super) enum ParseDigInstructionError {
     InvalidColour(ParseColourError),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum Direction {
     Up,
     Down,
@@ -96,4 +96,4 @@ pub(super) enum ParseDirectionError {
     UnknownDirection,
 }
 
-type DigAmount = u32;
+type DigAmount = u64;

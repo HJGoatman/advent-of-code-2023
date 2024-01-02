@@ -1,32 +1,29 @@
 use crate::colour::Colour;
 use crate::dig_plan::{DigInstruction, DigPlan, Direction};
 
-use std::collections::BTreeMap;
 use std::fmt::Display;
 
 use colored::Colorize;
 
 #[derive(Debug)]
-pub(super) enum TrenchPart {
-    Edge(Colour),
-    Interior,
+pub(super) struct Edge {
+    pub(super) start: Position,
+    pub(super) end: Position,
+    pub(super) length: u64,
+    pub(super) direction: Direction,
+    pub(super) colour: Colour,
 }
 
 #[derive(Debug)]
 pub(super) struct Trench {
-    pub(super) dug_out_positions: BTreeMap<Position, TrenchPart>,
+    pub(super) edges: Vec<Edge>,
 }
 
-impl From<DigPlan> for Trench {
-    fn from(dig_plan: DigPlan) -> Self {
-        let mut dug_out_positions = BTreeMap::new();
+impl From<&DigPlan> for Trench {
+    fn from(dig_plan: &DigPlan) -> Self {
+        let mut edges = Vec::new();
 
         const START: Position = Position { y: 0, x: 0 };
-
-        dug_out_positions.insert(
-            START,
-            TrenchPart::Edge(dig_plan.instructions.first().unwrap().colour),
-        );
 
         let mut current_position = START;
 
@@ -34,42 +31,59 @@ impl From<DigPlan> for Trench {
             direction,
             amount,
             colour,
-        } in dig_plan.instructions
+        } in dig_plan.instructions.iter().copied()
         {
-            for _ in 0..amount {
-                current_position = match direction {
-                    Direction::Up => Position {
-                        y: current_position.y - 1,
-                        x: current_position.x,
-                    },
-                    Direction::Down => Position {
-                        y: current_position.y + 1,
-                        x: current_position.x,
-                    },
-                    Direction::Left => Position {
-                        y: current_position.y,
-                        x: current_position.x - 1,
-                    },
-                    Direction::Right => Position {
-                        y: current_position.y,
-                        x: current_position.x + 1,
-                    },
-                };
+            let start = current_position;
+            let end = move_direction(start, direction, amount);
+            let length = ((start.x - end.x).abs() + (start.y - end.y).abs()) as u64;
 
-                dug_out_positions.insert(current_position, TrenchPart::Edge(colour));
-            }
+            let edge = Edge {
+                start,
+                end,
+                length,
+                direction,
+                colour,
+            };
+
+            edges.push(edge);
+
+            current_position = end;
         }
 
-        Trench { dug_out_positions }
+        Trench { edges }
+    }
+}
+
+pub fn move_direction(position: Position, direction: Direction, amount: u64) -> Position {
+    let amount = amount as i64;
+
+    match direction {
+        Direction::Up => Position {
+            y: position.y - amount,
+            x: position.x,
+        },
+        Direction::Down => Position {
+            y: position.y + amount,
+            x: position.x,
+        },
+        Direction::Left => Position {
+            y: position.y,
+            x: position.x - amount,
+        },
+        Direction::Right => Position {
+            y: position.y,
+            x: position.x + amount,
+        },
     }
 }
 
 impl Display for Trench {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let (xs, ys): (Vec<i32>, Vec<i32>) = self
-            .dug_out_positions
+        let (xs, ys): (Vec<i64>, Vec<i64>) = self
+            .edges
             .iter()
-            .map(|(Position { x, y }, _)| (x, y))
+            .map(|edge| edge.start)
+            .map(|Position { x, y }| (x, y))
             .unzip();
 
         let min_x = *xs.iter().min().ok_or(std::fmt::Error)?;
@@ -82,21 +96,30 @@ impl Display for Trench {
             f.write_str("\n")?;
 
             for x in min_x..max_x + 1 {
-                let current_position = Position { y, x };
+                let edge_search = self.edges.iter().find(|edge| {
+                    let start = edge.start;
+                    let end = edge.end;
 
-                if let Some(trench_part) = self.dug_out_positions.get(&current_position) {
+                    match edge.direction {
+                        Direction::Up => start.x == x && (end.y..start.y + 1).contains(&y),
+                        Direction::Down => start.x == x && (start.y..end.y + 1).contains(&y),
+                        Direction::Left => start.y == y && (end.x..start.x + 1).contains(&x),
+                        Direction::Right => start.y == y && (start.x..end.x + 1).contains(&x),
+                    }
+                });
+
+                if let Some(edge) = edge_search {
                     const DUG_OUT_PART: &str = "██";
 
-                    match trench_part {
-                        TrenchPart::Edge(Colour::RGB(red, green, blue)) => {
-                            f.write_fmt(format_args!(
-                                "{}",
-                                &DUG_OUT_PART.truecolor(*red, *green, *blue)
-                            ))?;
-                        }
-                        TrenchPart::Interior => {
-                            f.write_str(DUG_OUT_PART)?;
-                        }
+                    if (edge.start == Position { x, y }) || (edge.end == Position { x, y }) {
+                        f.write_str(DUG_OUT_PART)?;
+                    } else {
+                        let Colour::RGB(red, green, blue) = edge.colour;
+
+                        f.write_fmt(format_args!(
+                            "{}",
+                            &DUG_OUT_PART.truecolor(red, green, blue)
+                        ))?;
                     }
                 } else {
                     f.write_str("  ")?;
@@ -110,6 +133,6 @@ impl Display for Trench {
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
 pub(super) struct Position {
-    pub(super) y: i32,
-    pub(super) x: i32,
+    pub(super) y: i64,
+    pub(super) x: i64,
 }
