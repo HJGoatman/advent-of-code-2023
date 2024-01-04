@@ -1,6 +1,6 @@
 use std::{collections::HashMap, num::ParseIntError, str::FromStr};
 
-use crate::{BooleanStatement, PartRating, PartRatingValue, Statement, System, Var, WorkflowName};
+use crate::{BooleanExpression, PartRating, PartRatingValue, Statement, System, Var, WorkflowName};
 
 #[derive(Debug)]
 pub enum ParseStatementError {
@@ -52,7 +52,7 @@ impl FromStr for Statement {
     }
 }
 
-fn parse_boolean_statement(s: &str) -> Result<BooleanStatement, ParseStatementError> {
+fn parse_boolean_statement(s: &str) -> Result<BooleanExpression, ParseStatementError> {
     let var = s[0..1].parse().map_err(ParseStatementError::InvalidVar)?;
     let operator_str = &s[1..2];
     let rating_str = &s[2..];
@@ -61,8 +61,8 @@ fn parse_boolean_statement(s: &str) -> Result<BooleanStatement, ParseStatementEr
         .map_err(ParseStatementError::InvalidRating)?;
 
     match operator_str {
-        ">" => Ok(BooleanStatement::GreaterThan(var, rating_value)),
-        "<" => Ok(BooleanStatement::LessThan(var, rating_value)),
+        ">" => Ok(BooleanExpression::GreaterThan(var, rating_value)),
+        "<" => Ok(BooleanExpression::LessThan(var, rating_value)),
         _ => Err(ParseStatementError::UnknownBooleanOperator(
             operator_str.to_string(),
         )),
