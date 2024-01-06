@@ -5,6 +5,8 @@ use std::fs;
 
 trait Module: Debug {
     fn process(&mut self, from: &ModuleName, pulse: Pulse) -> Option<Pulse>;
+
+    fn reset(&mut self);
 }
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
@@ -41,6 +43,7 @@ mod module_network {
         connections: Connections,
         total_low_pulses: u32,
         total_high_pulses: u32,
+        total_button_pushes: u32,
     }
 
     const BROADCASTER_NAME: &str = "broadcaster";
@@ -52,10 +55,13 @@ mod module_network {
                 connections,
                 total_low_pulses: 0,
                 total_high_pulses: 0,
+                total_button_pushes: 0,
             }
         }
 
         pub(crate) fn push_button(&mut self) {
+            self.total_button_pushes += 1;
+
             const INITIAL_PULSE: Pulse = Pulse::Low;
             let initial_receiver: ModuleName = ModuleName(BROADCASTER_NAME.to_string());
 
@@ -73,6 +79,18 @@ mod module_network {
                 log::trace!("{:?} sends {:?} to {:?}", sender, pulse, receiver);
                 if let Some(module) = self.modules.get_mut(receiver) {
                     if let Some(next_pulse) = module.process(sender, pulse) {
+                        for target_box in ["ph", "nz", "tx", "dd"] {
+                            if *receiver == ModuleName(target_box.to_string())
+                                && next_pulse == Pulse::High
+                            {
+                                log::debug!(
+                                    "inner_box: {} => {}",
+                                    target_box,
+                                    self.total_button_pushes
+                                );
+                            }
+                        }
+
                         let next_receivers = self.connections.get(receiver).unwrap();
 
                         for next_receiver in next_receivers {
@@ -89,6 +107,20 @@ mod module_network {
 
         pub(crate) fn get_total_high_pulses_sent(&self) -> u32 {
             self.total_high_pulses
+        }
+
+        pub(crate) fn reset(&mut self) {
+            self.modules
+                .iter_mut()
+                .for_each(|(_, module)| module.reset());
+
+            self.total_low_pulses = 0;
+            self.total_high_pulses = 0;
+            self.total_button_pushes = 0;
+        }
+
+        pub(crate) fn get_total_button_pushes(&self) -> u32 {
+            self.total_button_pushes
         }
     }
 
@@ -185,10 +217,10 @@ mod flip_flop {
         state: FlipFlopState,
     }
 
+    const INITIAL_STATE: FlipFlopState = FlipFlopState::Off;
+
     impl FlipFlop {
         pub fn new() -> FlipFlop {
-            const INITIAL_STATE: FlipFlopState = FlipFlopState::Off;
-
             FlipFlop {
                 state: INITIAL_STATE,
             }
@@ -210,6 +242,10 @@ mod flip_flop {
                     }
                 },
             }
+        }
+
+        fn reset(&mut self) {
+            self.state = INITIAL_STATE;
         }
     }
 }
@@ -235,9 +271,10 @@ mod conjunction {
             Conjunction { memory }
         }
 
+        const DEFAULT_PULSE: Pulse = Pulse::Low;
+
         pub fn connect(&mut self, module: ModuleName) {
-            const DEFAULT_PULSE: Pulse = Pulse::Low;
-            let _ = &mut self.memory.insert(module, DEFAULT_PULSE);
+            let _ = &mut self.memory.insert(module, Conjunction::DEFAULT_PULSE);
         }
     }
 
@@ -251,6 +288,12 @@ mod conjunction {
             } else {
                 Some(Pulse::High)
             }
+        }
+
+        fn reset(&mut self) {
+            self.memory
+                .iter_mut()
+                .for_each(|(_, pulse)| *pulse = Conjunction::DEFAULT_PULSE);
         }
     }
 }
@@ -275,6 +318,8 @@ mod broadcast {
         fn process(&mut self, _from: &ModuleName, pulse: Pulse) -> Option<Pulse> {
             Some(pulse)
         }
+
+        fn reset(&mut self) {}
     }
 }
 
@@ -301,4 +346,15 @@ fn main() {
         module_network.get_total_low_pulses_sent() * module_network.get_total_high_pulses_sent();
 
     println!("{}", pulse_product);
+
+    module_network.reset();
+
+    for _ in 0..20000 {
+        module_network.push_button();
+    }
+
+    // log::debug!("{:#?}", module_network);
+
+    let total_button_pushes = module_network.get_total_button_pushes();
+    println!("{}", total_button_pushes);
 }
